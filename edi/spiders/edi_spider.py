@@ -19,15 +19,20 @@ class EdiSpider(scrapy.Spider):
         yield scrapy.Request(self.url, self.parse)
 
     def parse(self, response):
-        topics_overview_page = response.css('td.nis a::attr(href)').extract_first()
+        topics_overview_page = set(response.css('td.nis a::attr(href)').extract())
         print "response.url:", response.url
         if topics_overview_page:
+            count = 1
             for data_lake_url in topics_overview_page:
+                # if count > 2:
+                #     break
                 data_lake_overview_page = response.urljoin(data_lake_url)
                 print "new_url:", data_lake_overview_page
                 EdiSpider.data_package = data_lake_overview_page.split("=")[1]
+                EdiSpider.data_package = os.path.join(EdiSpider.directory + os.sep, EdiSpider.data_package)
                 if not os.path.exists(EdiSpider.data_package):
                     os.makedirs(EdiSpider.data_package)
+                count += 1
                 yield scrapy.Request(data_lake_overview_page, callback=self.get_data_links_from_data_lake)
 
     def get_data_links_from_data_lake(self, response):
@@ -42,7 +47,7 @@ class EdiSpider(scrapy.Spider):
         http_response = urllib2.urlopen(response.url)
         _, params = cgi.parse_header(http_response.headers.get('Content-Disposition',''))
         filename = params['filename']
-        EdiSpider.data_package = os.path.join(EdiSpider.directory + os.sep, EdiSpider.data_package)
+
         with open(os.path.join(EdiSpider.data_package, filename), 'wb') as file:
             self.logger.info("Saving file %s/%s", EdiSpider.data_package, filename)
             file.write(response.body)
