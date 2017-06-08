@@ -20,7 +20,7 @@ class EdiSpider(scrapy.Spider):
 
     def start_requests(self):
         # self.pagination_urls.append(self.url)
-        yield scrapy.Request(self.url, callback=self.parse)
+        # yield scrapy.Request(self.url, callback=self.parse)
         yield scrapy.Request(self.url, callback=self.prepare_url_list)
 
     def prepare_url_list(self, response):
@@ -33,8 +33,8 @@ class EdiSpider(scrapy.Spider):
             next_page = response.urljoin(intermediate_url_href)
             if next_page is not None:
                 # self.pagination_urls.append(next_page)
-                yield scrapy.Request(next_page, callback=self.parse)
-                yield scrapy.Request(next_page, callback=self.prepare_url_list)
+                yield scrapy.Request(next_page, callback=self.parse,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
+                yield scrapy.Request(next_page, callback=self.prepare_url_list,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
         # else:
         #     for page in self.pagination_urls:
         #         # print page
@@ -55,7 +55,7 @@ class EdiSpider(scrapy.Spider):
                 if not os.path.exists(EdiSpider.package_name):
                     os.makedirs(EdiSpider.package_name)
                 # count += 1
-                yield scrapy.Request(data_lake_overview_page, callback=self.get_data_links_from_data_lake)
+                yield scrapy.Request(data_lake_overview_page, callback=self.get_data_links_from_data_lake, headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
 
     def get_data_links_from_data_lake(self, response):
         print "inside get_data"
@@ -63,7 +63,7 @@ class EdiSpider(scrapy.Spider):
         regex = re.compile(".*(\\bdataviewer).*")
         data_links = [data_link.group(0) for link in all_links for data_link in [regex.search(link)] if data_link]
         for link in data_links:
-            yield scrapy.Request(response.urljoin(link), callback=self.download_data_from_data_lake)
+            yield scrapy.Request(response.urljoin(link), callback=self.download_data_from_data_lake,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
 
     def download_data_from_data_lake(self, response):
         http_response = urllib2.urlopen(response.url)
@@ -74,6 +74,7 @@ class EdiSpider(scrapy.Spider):
         with open(os.path.join(EdiSpider.package_name, filename), 'wb') as file:
             self.logger.info("Saving file %s/%s", EdiSpider.package_name, filename)
             file.write(response.body)
-
+    def errback(self, url):
+        yield scrapy.Request(url, dont_filter=True, callback=self.parse, errback=lambda x: self.parse(x, url),headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
 from scrapy import cmdline
 cmdline.execute("scrapy crawl edi".split())
