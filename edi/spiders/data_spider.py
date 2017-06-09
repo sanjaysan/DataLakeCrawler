@@ -7,6 +7,8 @@ import cgi
 import os
 import HTMLParser
 
+class Links(scrapy.Item):
+    main_url = scrapy.Field()
 
 
 class EdiSpider(scrapy.Spider):
@@ -18,33 +20,48 @@ class EdiSpider(scrapy.Spider):
 
     data_package = ""
 
-    # def start_requests(self):
+    # def get_page_links(self):
     #     # self.pagination_urls.append(self.url)
     #     # yield scrapy.Request(self.url, callback=self.prepare_url_list)
     #     # yield scrapy.Request(self.url, callback=self.parse,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
     #
     #     yield scrapy.Request(EdiSpider.start_urls[0], callback=self.prepare_url_list)
     #
-    # def prepare_url_list(self, response):
-    #     temp_url = response.xpath('//a[contains(@href, "simpleSearch")]').extract()
-    #     regex = re.compile(".*(&gt;)")
-    #     intermediate_url = [matcher.group(0) for url in temp_url for matcher in [regex.search(url)] if matcher]
-    #     if intermediate_url:
-    #         intermediate_url_href = re.search("simpleSearch(.*)(asc|desc)", intermediate_url[0]).group(0)
-    #         intermediate_url_href = HTMLParser.HTMLParser().unescape(intermediate_url_href)
-    #         next_page = response.urljoin(intermediate_url_href)
-    #         if next_page is not None:
-    #             # self.pagination_urls.append(next_page)
-    #             # yield scrapy.Request(next_page, callback=self.parse,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
-    #             # yield scrapy.Request(next_page, callback=self.prepare_url_list,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
-    #             # EdiSpider.start_urls.append(next_page)
+    def get_page_links(self, response):
+        temp_url = response.xpath('//a[contains(@href, "simpleSearch")]').extract()
+        regex = re.compile(".*(&gt;)")
+        intermediate_url = [matcher.group(0) for url in temp_url for matcher in [regex.search(url)] if matcher]
+        item = response.meta['item']
+        if intermediate_url:
+            intermediate_url_href = re.search("simpleSearch(.*)(asc|desc)", intermediate_url[0]).group(0)
+            intermediate_url_href = HTMLParser.HTMLParser().unescape(intermediate_url_href)
+            next_page = response.urljoin(intermediate_url_href)
+            # yield scrapy.Request(next_page, callback=self.get_table_links)
+            item['main_url'].add(next_page)
+            request = scrapy.Request(next_page, callback=self.get_page_links)
+            request.meta['item'] = item
+            yield request
+        else:
+            for page in item['main_url']:
+                yield scrapy.Request(page, callback=self.get_table_links, dont_filter=True)
+            # if next_page is not None:
+                # self.pagination_urls.append(next_page)
+                # yield scrapy.Request(next_page, callback=self.parse,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
+                # yield scrapy.Request(next_page, callback=self.prepare_url_list,headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 5_1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Version/5.1 Mobile/9B179 Safari/7534.48.3"})
+                # EdiSpider.start_urls.append(next_page)
     def parse(self, response):
         print "response.url:", response.url
-        yield scrapy.Request(response.url, self.get_table_links)
-        item = scrapy.Item(0)
-        for url in set(response.xpath('//a[contains(@href, "score")]/@href').extract()):
-            page = response.urljoin(url)
-            yield scrapy.Request(page, callback=self.get_table_links)
+        item = Links()
+        item['main_url'] = set()
+        item['main_url'].add(response.url)
+        request =  scrapy.Request(response.url, callback=self.get_page_links)
+        request.meta['item'] = item
+        yield request
+
+
+        # for url in set(response.xpath('//a[contains(@href, "score")]/@href').extract()):
+        #     page = response.urljoin(url)
+        #     yield scrapy.Request(page, callback=self.get_table_links)
 
 
     def get_table_links(self,  response):
