@@ -62,19 +62,22 @@ class ListCrawler(scrapy.Spider):
             self.write_to_file(file_path, item['pagination_urls'])
 
     def errback(self, failure):
-        # log all failures
+        
+        """
+        Handles any exception that occurs while crawling and reissues a request to the server
+        for the URL which failed.
+        :param failure: Error details
+        """
+        # Logs all failures
         self.logger.error(repr(failure))
 
-        # in case you want to do something special for some errors,
-        # you may need the failure's type:
+        # Checking the type of failure and handling it accordingly
         if failure.check(HttpError):
-            # these exceptions come from HttpError spider middleware
-            # you can get the non-200 response
             response = failure.value.response
             self.logger.error('HttpError on %s', response.url)
 
         elif failure.check(DNSLookupError):
-            # this is the original request
+            # This is the original request
             request = failure.request
             self.logger.error('DNSLookupError on %s', request.url)
 
@@ -82,6 +85,7 @@ class ListCrawler(scrapy.Spider):
             request = failure.request
             self.logger.error('TimeoutError on %s', request.url)
 
+        # Reissuing a request
         response = failure.value.response
         yield scrapy.Request(response.url, dont_filter=True, callback=self.download_data_files)
 
