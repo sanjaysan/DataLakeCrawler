@@ -153,9 +153,10 @@ class PathCrawler(scrapy.Spider):
         PathCrawler.package_name = os.path.join(PathCrawler.directory + os.sep, PathCrawler.package_name)
         if not os.path.exists(PathCrawler.package_name):
             os.makedirs(PathCrawler.package_name)
-        with open(os.path.join(PathCrawler.package_name, filename), 'wb') as file:
+        with open(os.path.join(PathCrawler.package_name, filename), 'wb+') as file:
             self.logger.info("Saving file %s/%s", PathCrawler.package_name, filename)
             file.write(response.body)
+        file.close()
 
     def errback(self, failure):
         """
