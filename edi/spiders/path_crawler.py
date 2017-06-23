@@ -1,10 +1,12 @@
-import urllib2
-import scrapy
-import re
 import cgi
 import os
+import re
+import urllib2
+
+import scrapy
 from scrapy.crawler import CrawlerProcess
 from scrapy.spidermiddlewares.httperror import HttpError
+from scrapy.utils.project import get_project_settings
 from twisted.internet.error import DNSLookupError
 from twisted.internet.error import TimeoutError, TCPTimedOutError
 
@@ -20,19 +22,31 @@ class Links(scrapy.Item):
     total_depth = scrapy.Field()
     depth_url_patterns = scrapy.Field()
     depth_url_patterns_rev = scrapy.Field()
+    referrer = scrapy.Field()
 
 
 class PathCrawler(scrapy.Spider):
+    file_object = open('pagination_url_path.txt', 'r')
+    pagination_file = file_object.readline()
+    data_directory = pagination_file[:pagination_file.rfind('/')]
+    file_object.close()
+
     # Spider's name
-    name = "data"
+    scrapy.Spider.name = "path"
 
-    # Start page's URL
-    start_urls = ['https://portal.edirepository.org/nis/browseServlet?searchValue=water+balance']
+    # Getting URLs from the pagination file
+    all_urls = []
+    with open(pagination_file, 'r') as pagination_file:
+        for urls in pagination_file:
+            all_urls.append(urls.replace('\n', ''))
 
-    # Create a parent directory for storing the downloaded files
-    directory = start_urls[0].split("=")[-1]
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    start_urls = [all_urls[0]]
+    # Create a parent directory for storing the data files
+    if not os.path.exists(data_directory):
+        os.makedirs(data_directory)
+
+    # Get the total number of depths (levels) from the user
+    total_depth = int(raw_input("Enter max depth: "))
 
     def parse(self, response):
         """
@@ -40,33 +54,42 @@ class PathCrawler(scrapy.Spider):
         :param response: The response packet received after making a request to the server
 
         """
-        # Get the total number of depths (levels) from the user
-        total_depth = int(raw_input("Enter max depth: "))
+
+        # Storing metadata
+        item = Links()
+        item['total_depth'] = PathCrawler.total_depth
 
         # Two maps which map the depth with the URL pattern and vice-versa
         url_pattern_for_each_depth = {}
         url_pattern_for_each_depth_rev = {}
 
-        # Get the URL pattern for each depth from the user
-        for i in range(0, total_depth):
+        # Getting the URL pattern for each depth from the user
+        print 'Enter the URL patterns for each depth (E.g. mapbrowse?packageid=)'
+        for i in range(0, PathCrawler.total_depth):
             depth_url = raw_input("Specify URL pattern for depth %s: " % (i + 1))
             url_pattern_for_each_depth[depth_url] = i
             url_pattern_for_each_depth_rev[i] = depth_url
 
-        # Storing metadata
-        item = Links()
-        item['current_depth'] = 0
-        item['total_depth'] = total_depth
-
         item['depth_url_patterns'] = url_pattern_for_each_depth
         item['depth_url_patterns_rev'] = url_pattern_for_each_depth_rev
+        item['referrer'] = None
+        item['current_depth'] = 0
         item['current_url_pattern'] = " "
 
-        # Creating a request to the URL in 'response.url' which will be handled by the function
-        # get_table_links. self.errback will handle any exceptions that occur during crawling.
-        request = scrapy.Request(response.url, callback=self.get_table_links, errback=self.errback)
-        request.meta['item'] = item
-        yield request
+        home_page_request = scrapy.Request(response.url, headers={'Referer': item['referrer']},
+                                           callback=self.get_table_links, errback=self.errback)
+        item['referrer'] = response.url
+        home_page_request.meta['item'] = item
+        yield home_page_request
+
+        for url in self.all_urls[1:]:
+            # Creating a request with the URLs in all_urls which will be handled by the function
+            # get_table_links.  self.errback will handle any exceptions that occur during crawling.
+            request = scrapy.Request(url, headers={'Referer': item['referrer']}, callback=self.get_table_links,
+                                     dont_filter=True)
+            item['referrer'] = url
+            request.meta['item'] = item
+            yield request
 
     def eliminate_duplicates(self, list_with_duplicates):
         """
@@ -149,14 +172,14 @@ class PathCrawler(scrapy.Spider):
         filename = params['filename']
 
         # Creates a subdirectory and saves the file
-        PathCrawler.package_name = re.search("packageid=(.*)&", response.url).group(1)
-        PathCrawler.package_name = os.path.join(PathCrawler.directory + os.sep, PathCrawler.package_name)
+        PathCrawler.package_name = re.search("=(.*)&", response.url).group(1)
+        PathCrawler.package_name = os.path.join(str(self.data_directory) + os.sep, PathCrawler.package_name)
         if not os.path.exists(PathCrawler.package_name):
             os.makedirs(PathCrawler.package_name)
-        with open(os.path.join(PathCrawler.package_name, filename), 'wb+') as file:
-            self.logger.info("Saving file %s/%s", PathCrawler.package_name, filename)
-            file.write(response.body)
-        file.close()
+        with open(os.path.join(PathCrawler.package_name, filename), 'wb+') as file_object:
+            self.logger.info("Saving file %s", file_object.name)
+            file_object.write(response.body)
+        file_object.close()
 
     def errback(self, failure):
         """
@@ -169,25 +192,22 @@ class PathCrawler(scrapy.Spider):
 
         # Checking the type of failure and handling it accordingly
         if failure.check(HttpError):
-            response = failure.value.response
-            self.logger.error('HttpError on %s', response.url)
+            self.logger.error('HttpError on %s', failure)
 
         elif failure.check(DNSLookupError):
             # This is the original request
-            request = failure.request
-            self.logger.error('DNSLookupError on %s', request.url)
+            self.logger.error('DNSLookupError on %s', failure)
 
         elif failure.check(TimeoutError, TCPTimedOutError):
-            request = failure.request
-            self.logger.error('TimeoutError on %s', request.url)
+            self.logger.error('TimeoutError on %s', failure)
 
         # Reissuing a request
-        response = failure.value.response
-        yield scrapy.Request(response.url, dont_filter=True, callback=self.download_data_files)
+        yield scrapy.Request(failure, dont_filter=True, callback=self.download_data_files)
+
 
 # Main program
-process = CrawlerProcess({
-    'USER_AGENT': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1)'
-})
+process = CrawlerProcess(get_project_settings())
 process.crawl(PathCrawler)
 process.start()
+os.remove(PathCrawler.pagination_file.name)
+os.remove(PathCrawler.file_object.name)

@@ -16,7 +16,7 @@ class Links(scrapy.Item):
 
 class EdiSpider(scrapy.Spider):
     name = "data"
-    start_urls = ['https://portal.edirepository.org/nis/browseServlet?searchValue=genomics']
+    start_urls = ['htps://portal.edirepository.org/nis/browseServlet?searchValue=water+balance']
     directory = start_urls[0].split("=")[-1]
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -72,9 +72,10 @@ class EdiSpider(scrapy.Spider):
         filename = params['filename']
         EdiSpider.package_name = re.search("packageid=(.*)&", response.url).group(1)
         EdiSpider.package_name = os.path.join(EdiSpider.directory + os.sep, EdiSpider.package_name)
-        with open(os.path.join(EdiSpider.package_name, filename), 'wb') as file:
-            self.logger.info("Saving file %s/%s", EdiSpider.package_name, filename)
-            file.write(response.body)
+        with open(os.path.join(EdiSpider.package_name, filename), 'wb') as file_object:
+            self.logger.info("Saving file %s", file_object.name)
+            file_object.write(response.body)
+        file_object.close()
 
     def errback(self, failure):
         # log all failures
